@@ -11,7 +11,7 @@ with open('mnist_train.csv', 'r') as file:
 
 # Đọc dữ liệu từ tệp test
 test_data = []
-with open('mnist_test4.csv', 'r') as file:
+with open('mnist_test2000.csv', 'r') as file:
     reader = csv.reader(file)
     next(reader)  # Bỏ qua dòng đầu tiên (chứa tên cột)
     for row in reader:

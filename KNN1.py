@@ -39,7 +39,7 @@ X_train = train_data.drop('label', axis=1).values
 y_train = train_data['label'].values
 
 # Đọc dữ liệu kiểm tra
-test_data = pd.read_csv('mnist_test.csv')
+test_data = pd.read_csv('mnist_test2000.csv')
 
 # Chia tập kiểm tra thành các đặc trưng (X_test) và nhãn (y_test)
 X_test = test_data.drop('label', axis=1).values
