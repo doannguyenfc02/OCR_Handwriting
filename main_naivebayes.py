@@ -33,8 +33,26 @@ nb_model = MultinomialNB()
 # Huấn luyện mô hình trên tập huấn luyện
 nb_model.fit(X_train, y_train)
 
+import pickle
 
+# Lưu mô hình
+with open('naive_bayes_model.pkl', 'wb') as file:
+    pickle.dump(nb_model, file)
+
+    
 #4. Đánh giá mô hình
 # Đánh giá mô hình trên tập kiểm tra
 accuracy = nb_model.score(X_test, y_test)
 print("Độ chính xác trên tập kiểm tra: ", accuracy)
+
+# Tải mô hình đã lưu
+with open('naive_bayes_model.pkl', 'rb') as file:
+    loaded_model = pickle.load(file)
+
+# Sử dụng mô hình tải để đánh giá
+accuracy = loaded_model.score(X_test, y_test)
+print("Độ chính xác trên tập kiểm tra: ", accuracy)
+
+
+
+
