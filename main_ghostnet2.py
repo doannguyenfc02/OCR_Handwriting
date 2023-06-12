@@ -1,92 +1,84 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import ToTensor
-from torchvision.models import ghostnet
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Conv2D, BatchNormalization, Activation, DepthwiseConv2D, GlobalAveragePooling2D, Dense
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
 
-# Định nghĩa mô hình GhostNet
-class GhostNet(nn.Module):
-    def __init__(self, num_classes):
-        super(GhostNet, self).__init__()
-        self.model = ghostnet(pretrained=False, num_classes=num_classes)
+def ghostnet_block(inputs, expansion, channels, stride):
+    x = Conv2D(expansion * inputs.shape[-1], kernel_size=(1, 1))(inputs)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    x = DepthwiseConv2D(kernel_size=(3, 3), strides=(stride, stride), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    x = Conv2D(channels, kernel_size=(1, 1))(x)
+    x = BatchNormalization()(x)
+    
+    if stride == 1 and inputs.shape[-1] == channels:
+        x = tf.keras.layers.add([x, inputs])
+    
+    return x
 
-    def forward(self, x):
-        return self.model(x)
+def GhostNet(input_shape, num_classes):
+    inputs = tf.keras.Input(shape=input_shape)
+    
+    x = Conv2D(16, kernel_size=(3, 3), strides=(2, 2), padding='same')(inputs)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    x = ghostnet_block(x, expansion=16, channels=16, stride=1)
+    x = ghostnet_block(x, expansion=48, channels=24, stride=2)
+    x = ghostnet_block(x, expansion=72, channels=24, stride=1)
+    x = ghostnet_block(x, expansion=72, channels=40, stride=2)
+    x = ghostnet_block(x, expansion=120, channels=40, stride=1)
+    x = ghostnet_block(x, expansion=240, channels=80, stride=2)
+    x = ghostnet_block(x, expansion=240, channels=80, stride=1)
+    x = ghostnet_block(x, expansion=480, channels=112, stride=1)
+    x = ghostnet_block(x, expansion=672, channels=160, stride=2)
+    
+    x = Conv2D(960, kernel_size=(1, 1))(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+    
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(num_classes, activation='softmax')(x)
+    
+    model = Model(inputs=inputs, outputs=x)
+    return model
 
-# Định nghĩa lớp dữ liệu tùy chỉnh
-class CustomDataset(Dataset):
-    def __init__(self, file_path):
-        self.data = self.load_data(file_path)
+# Định dạng dữ liệu đầu vào
+input_shape = (28, 28, 1)
+num_classes = 10
 
-    def __len__(self):
-        return len(self.data)
+# Load dữ liệu MNIST
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
 
-    def __getitem__(self, index):
-        image = self.data[index][1:]  # Bỏ qua cột đầu tiên (nhãn)
-        image = torch.tensor(image, dtype=torch.float32) / 255.0
-        image = image.view(1, 28, 28)  # Định dạng lại thành kích thước 28x28
+# Chia tập train thành tập train và tập validation
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
-        label = self.data[index][0]  # Nhãn
+# Reshape và chuẩn hóa dữ liệu
+X_train = X_train.reshape(-1, 28, 28, 1) / 255.0
+X_val = X_val.reshape(-1, 28, 28, 1) / 255.0
+X_test = X_test.reshape(-1, 28, 28, 1) / 255.0
 
-        return image, label
+# One-hot encoding cho labels
+y_train = to_categorical(y_train, num_classes)
+y_val = to_categorical(y_val, num_classes)
+y_test = to_categorical(y_test, num_classes)
 
-    def load_data(self, file_path):
-        # Đọc dữ liệu từ tệp CSV và chuyển thành list
-        with open(file_path, 'r') as file:
-            lines = file.readlines()
-        data = [line.strip().split(',') for line in lines]
-        return data
+# Xây dựng mô hình GhostNet
+model = GhostNet(input_shape, num_classes)
 
-# Chuẩn bị dữ liệu
-train_dataset = CustomDataset('mnist_train.csv')
-test_dataset = CustomDataset('mnist_test.csv')
-
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-
-# Xây dựng mô hình
-model = GhostNet(num_classes=10)  # 10 là số lượng nhãn trong MNIST
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+# Compile mô hình
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
 # Huấn luyện mô hình
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
+model.fit(X_train, y_train, batch_size=128, epochs=10, validation_data=(X_val, y_val))
 
-num_epochs = 10
-for epoch in range(num_epochs):
-    model.train()
-    for images, labels in train_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item()}")
-
-# Đánh giá mô hình
-model.eval()
-correct = 0
-total = 0
-
-with torch.no_grad():
-    for images, labels in test_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-
-        outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-accuracy = 100 * correct / total
-print(f"Accuracy on test set: {accuracy}%")
-
-
+# Đánh giá mô hình trên tập test
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+print("Độ chính xác trên tập test: ", test_accuracy)
 
